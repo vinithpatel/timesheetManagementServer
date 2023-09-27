@@ -5,7 +5,8 @@ const path = require("path") ;
 
 const {open} = require("sqlite") ;
 const sqlite3 = require("sqlite3") ;
-const { time } = require("console");
+
+const {startOfWeek, endOfWeek, format, getDay, nextMonday, previousSunday, getWeek} = require("date-fns") ;
 
 
 const app = express() ;
@@ -212,7 +213,6 @@ app.put("/timesheet/submit/:timeSheetId", async (request, response) => {
 
 app.put("/timesheet/save/:timeSheetId", async (request, response) => {
     
-
     const {timeSheetId} = request.params ;
     const {arr} = request.body ;
     
@@ -283,4 +283,167 @@ app.put('/timesheet/open/:timeSheetId', async (request, response) => {
 
     response.send(dbResponse) ;
 
+})
+
+
+app.get('/timesheet/export/:timeSheetId', async(request, response) => {
+        const {timeSheetId} = request.params 
+        
+        const selectTimeSheetQuery = `
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        (COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total, 
+        ((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * Rate.rate/8) AS cost, Rate.rate
+
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON project.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
+        WHERE TIMESHEET.id=${timeSheetId} ;
+        `
+
+        const data = await db.all(selectTimeSheetQuery)
+        response.send(data) ;
+});
+
+app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (request, response) => {
+
+    const {employeeId, monthValue} = request.params;
+
+    const [year, month] = monthValue.split("-") ;
+
+    const date = new Date(year, month-1, 1)
+    
+    const firstWeekNumber = getWeek(date, {weekStartsOn:1, firstWeekContainsDate:2})
+    const firstWeekNumberFormat = `${year}-W${firstWeekNumber}`
+
+    const monthSecondWeekDate = nextMonday(date) ;
+    const secondWeekFirstDayFormat = format(monthSecondWeekDate, 'yyyy-MM-dd') ;
+
+
+    const columnNames = ['COALESCE(monday,0)', 'COALESCE(tuesday,0)','COALESCE(wednesday,0)' , 'COALESCE(thursday,0)', 'COALESCE(friday,0)', 'COALESCE(satuarday, 0)', 'COALESCE(sunday, 0)'] ;
+
+    let dayOfWeek = getDay(date) ;
+
+    if(dayOfWeek === 0){
+        dayOfWeek = 6 ;
+    }else{
+        dayOfWeek -= 1
+    }
+    const firstWeekColumnNames = columnNames.slice(dayOfWeek).join('+');
+
+
+    date.setMonth(date.getMonth() + 1) ;
+    date.setDate(0) ;
+
+    const monthEndWeekNumber = getWeek(date, {weekStartsOn:1, firstWeekContainsDate:2})
+    const endWeekNumberFormat = `${year}-W${monthEndWeekNumber}`
+
+    const monthEndPreviousWeekDate = previousSunday(date) ;
+    const monthEndtPreviousWeekFormat = format(monthEndPreviousWeekDate, 'yyyy-MM-dd') ;
+
+    dayOfWeek = getDay(date) ;
+
+    if(dayOfWeek === 0){
+        dayOfWeek = 7 ;
+    }
+
+    const lastWeekColumnNames = columnNames.slice(0, dayOfWeek).join('+') ;
+
+    // console.log(firstWeekNumberFormat)
+    // console.log(secondWeekFirstDayFormat)
+    // console.log(firstWeekColumnNames)
+
+    // console.log(endWeekNumberFormat)
+    // console.log(monthEndtPreviousWeekFormat)
+    // console.log(lastWeekColumnNames)
+
+    const firstWeekSelectQuery = `
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        SUM(${firstWeekColumnNames}) AS total,
+        SUM((${firstWeekColumnNames}) * RATE.rate/8) AS cost
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
+        WHERE TIMESHEET.week LIKE '%${firstWeekNumberFormat}%' AND TIMESHEET.employee_id LIKE '%${employeeId}%'
+        GROUP BY projectId 
+    `
+
+    const lastWeekSelectQuery = `
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        SUM(${lastWeekColumnNames}) AS total,
+        SUM((${lastWeekColumnNames}) * RATE.rate/8) AS cost
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
+        WHERE TIMESHEET.week LIKE '%${endWeekNumberFormat}%' AND TIMESHEET.employee_id LIKE '%${employeeId}%'
+        GROUP BY projectId 
+    `
+
+    const middleWeeksSelectQuery = `
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total, 
+        SUM((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * Rate.rate/8) AS cost
+
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON project.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
+        WHERE TIMESHEET.id IN (SELECT TIMESHEET.id AS id 
+            FROM TIMESHEET
+            WHERE TIMESHEET.employee_id LIKE '%${employeeId}%' AND TIMESHEET.start_date >= '${secondWeekFirstDayFormat}' AND TIMESHEET.end_date <= '${monthEndtPreviousWeekFormat}')
+        GROUP BY projectId 
+    `
+
+    const selectMonthQuery = `
+            WITH FirstWeek AS (
+                ${firstWeekSelectQuery}
+            ),
+            MiddleWeek AS (
+                ${middleWeeksSelectQuery}
+            ),
+            LastWeek AS (
+                ${lastWeekSelectQuery}
+            )
+            SELECT projectId, projectName, SUM(total) AS total, SUM(cost) AS cost
+            FROM (
+                SELECT * FROM FirstWeek
+                UNION ALL
+                SELECT * FROM MiddleWeek
+                UNION ALL
+                SELECT * FROM LastWeek
+            ) AS CombineQuery
+            GROUP BY projectId ;
+    `
+
+    const data = await db.all(selectMonthQuery)
+    response.send(data) ;
+
+})
+
+app.get('/timesheet/employee/:employeeId/weekly_export/:weekValue', async (request, response) => {
+    const {employeeId,  weekValue} = request.params ;
+    console.log(employeeId)
+    console.log(weekValue)
+    
+    const selectTimeSheetQuery = `
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        (COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total, 
+        ((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * Rate.rate/8) AS cost, Rate.rate
+
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON project.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
+        WHERE TIMESHEET.employee_id LIKE '%${employeeId}%' AND TIMESHEET.week LIKE '%${weekValue}%' ;
+        `
+
+    const data = await db.all(selectTimeSheetQuery)
+    response.send(data) ;
+    
+})
+
+app.get("/employee/:employeeId", async (request, response) => {
+    const {employeeId} = request.params ;
+
+    const selectEmployeeQuery = `
+        SELECT EMPLOYEE.id AS employeeId, name AS employeeName, email AS employeeEmail, is_admin AS isAdmin , POSITION.position_name AS position
+        FROM EMPLOYEE JOIN POSITION ON EMPLOYEE.position_id = POSITION.id
+        WHERE EMPLOYEE.id = '${employeeId}' ;
+    `
+
+    const dbData = await db.get(selectEmployeeQuery)
+    
+    if(dbData === undefined){
+        response.status(404)
+        response.send({msg:"Employee Id Not Found"})
+    }else{
+        response.send(dbData) ;
+    }
 })
