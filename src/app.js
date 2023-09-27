@@ -184,7 +184,10 @@ app.get('/timesheet/:timeSheetId', async (request, response) => {
     const selectTimeSheetQuery = `
     SELECT TIMESHEET_PROJECT.id AS id, TIMESHEET.id AS timeSheetId, TIMESHEET.status AS status, TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, 
         monday, tuesday, wednesday, thursday, friday, satuarday, 
-        sunday, comment,(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total
+        sunday,(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total,
+        monday_comment AS mondayComment, tuesday_comment AS tuesdayComment, wednesday_comment AS wednesdayComment, 
+        thursday_comment AS thursdayComment, friday_comment AS fridayComment, 
+        satuarday_comment AS satuardayComment, sunday_comment AS sundayComment
 
     FROM TIMESHEET JOIN TIMESHEET_PROJECT ON TIMESHEET.id = TIMESHEET_PROJECT.timesheet_id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id
     WHERE TIMESHEET.id=${timeSheetId} ;
@@ -226,10 +229,12 @@ app.put("/timesheet/save/:timeSheetId", async (request, response) => {
     for(const row of arr){
         const insertTimeSheetProjectsQuery = `
             INSERT INTO TIMESHEET_PROJECT(
-                timesheet_id, project_id, monday, tuesday, wednesday, thursday, friday, satuarday, sunday, comment
+                timesheet_id, project_id, monday, tuesday, wednesday, thursday, friday, satuarday, sunday,
+                monday_comment, tuesday_comment, wednesday_comment, thursday_comment, friday_comment, satuarday_comment, sunday_comment
             )
             VALUES(
-                ${timeSheetId}, ${row.projectId}, ${row.monday}, ${row.tuesday}, ${row.wednesday}, ${row.thursday}, ${row.friday}, ${row.satuarday}, ${row.sunday}, '${row.comment}'
+                ${timeSheetId}, ${row.projectId}, ${row.monday}, ${row.tuesday}, ${row.wednesday}, ${row.thursday}, ${row.friday}, ${row.satuarday}, ${row.sunday}, '${row.comment}',
+                '${row.mondayComment}','${row.tuesdayComment}', '${row.wednesdayComment}', '${row.thursdayComment}', '${row.fridayComment}', '${row.satuardayComment}', '${row.sundayComment}'
             ) ;
         `
         await db.run(insertTimeSheetProjectsQuery) ; 
