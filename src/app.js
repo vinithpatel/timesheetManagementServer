@@ -182,6 +182,28 @@ app.get('/timesheet/:timeSheetId', async (request, response) => {
     const {timeSheetId} = request.params ;
 
     const selectTimeSheetQuery = `
+        SELECT TIMESHEET.id AS timeSheetId, TIMESHEET.employee_id AS employeeId, EMPLOYEE.name AS employeeName, week, status, start_date AS startDate, end_date AS endDate
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id
+        WHERE TIMESHEET.id = '${timeSheetId}';
+    `
+
+    const data = await db.get(selectTimeSheetQuery) ;
+
+    if(data === undefined){
+        response.status(404) ;
+        response.send({message:'timesheet not exist'})
+    }else{
+        response.send(data) ;
+    }
+
+    
+    
+})
+
+app.get('/timesheet/projects/:timeSheetId', async (request, response) => {
+    const {timeSheetId} = request.params ;
+
+    const selectTimeSheetQuery = `
     SELECT TIMESHEET_PROJECT.id AS id, TIMESHEET.id AS timeSheetId, TIMESHEET.status AS status, TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, 
         monday, tuesday, wednesday, thursday, friday, satuarday, 
         sunday,(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total,
@@ -233,7 +255,7 @@ app.put("/timesheet/save/:timeSheetId", async (request, response) => {
                 monday_comment, tuesday_comment, wednesday_comment, thursday_comment, friday_comment, satuarday_comment, sunday_comment
             )
             VALUES(
-                ${timeSheetId}, ${row.projectId}, ${row.monday}, ${row.tuesday}, ${row.wednesday}, ${row.thursday}, ${row.friday}, ${row.satuarday}, ${row.sunday}, '${row.comment}',
+                ${timeSheetId}, ${row.projectId}, ${row.monday}, ${row.tuesday}, ${row.wednesday}, ${row.thursday}, ${row.friday}, ${row.satuarday}, ${row.sunday},
                 '${row.mondayComment}','${row.tuesdayComment}', '${row.wednesdayComment}', '${row.thursdayComment}', '${row.fridayComment}', '${row.satuardayComment}', '${row.sundayComment}'
             ) ;
         `
@@ -451,4 +473,61 @@ app.get("/employee/:employeeId", async (request, response) => {
     }else{
         response.send(dbData) ;
     }
+})
+
+app.get("/employees", async (request, response) => {
+    const  {employeeId = "", employeeName = ""} = request.query ;
+
+    const selectEmployeesQuery = `
+        SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName, EMPLOYEE.email AS employeeEmail, EMPLOYEE.is_admin AS isAdmin, POSITION.position_name AS positionName
+        FROM EMPLOYEE JOIN POSITION ON EMPLOYEE.position_id = POSITION.id
+        WHERE EMPLOYEE.id LIKE '%${employeeId}%' AND EMPLOYEE.name LIKE '%${employeeName}%';
+    `
+
+    const dbData = await db.all(selectEmployeesQuery) ;
+
+    response.send(dbData) ;
+})
+
+app.get("/projects", async (request, response) => {
+    const {projectName = ""} = request.query ;
+
+    const selectProjectsQuery = `
+        SELECT id as projectId, project_name AS projectName
+        FROM PROJECT
+        WHERE project_name LIKE '%${projectName}%';
+    `
+
+    const dbData = await db.all(selectProjectsQuery) ;
+
+    response.send(dbData) ;
+})
+
+app.put("/projects/save/:employeeId", async (request, response) => {
+    const {employeeId} = request.params ;
+
+    const {projectsList} = request.body ;
+    console.log(projectsList)
+
+    const deleteProjectsQuery = `
+        DELETE FROM EMPLOYEE_PROJECT
+        WHERE employee_id = '${employeeId}';
+    `
+
+    await db.run(deleteProjectsQuery)
+
+    for(let project of projectsList){
+        const addProjectToEmployeeQuery = `
+        INSERT INTO EMPLOYEE_PROJECT(
+            employee_id, project_id
+        )
+        VALUES (
+            ${employeeId}, ${project.projectId}
+        )
+    `
+    await db.run(addProjectToEmployeeQuery)
+    }
+
+    response.send({message:"projects added successfull"})
+    
 })
