@@ -384,7 +384,7 @@ app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (req
     const firstWeekSelectQuery = `
         SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
         SUM(${firstWeekColumnNames}) AS total,
-        SUM((${firstWeekColumnNames}) * RATE.rate/8) AS cost
+        SUM((${firstWeekColumnNames}) * RATE.rate/8) AS cost, Rate.rate AS rate
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
         WHERE TIMESHEET.week LIKE '%${firstWeekNumberFormat}%' AND TIMESHEET.employee_id LIKE '%${employeeId}%'
         GROUP BY projectId 
@@ -393,7 +393,7 @@ app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (req
     const lastWeekSelectQuery = `
         SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
         SUM(${lastWeekColumnNames}) AS total,
-        SUM((${lastWeekColumnNames}) * RATE.rate/8) AS cost
+        SUM((${lastWeekColumnNames}) * RATE.rate/8) AS cost,Rate.rate AS rate
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
         WHERE TIMESHEET.week LIKE '%${endWeekNumberFormat}%' AND TIMESHEET.employee_id LIKE '%${employeeId}%'
         GROUP BY projectId 
@@ -402,7 +402,7 @@ app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (req
     const middleWeeksSelectQuery = `
         SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
         SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total, 
-        SUM((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * Rate.rate/8) AS cost
+        SUM((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * Rate.rate/8) AS cost, Rate.rate AS rate
 
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON project.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
         WHERE TIMESHEET.id IN (SELECT TIMESHEET.id AS id 
@@ -493,7 +493,7 @@ app.get("/projects", async (request, response) => {
     const {projectName = ""} = request.query ;
 
     const selectProjectsQuery = `
-        SELECT id as projectId, project_name AS projectName
+        SELECT id as projectId, project_name AS projectName, type, start_date AS startDate, end_date AS endDate, description, customer_id AS customer, cost, currency
         FROM PROJECT
         WHERE project_name LIKE '%${projectName}%';
     `
@@ -529,5 +529,112 @@ app.put("/projects/save/:employeeId", async (request, response) => {
     }
 
     response.send({message:"projects added successfull"})
+    
+})
+
+app.delete("/project/delete/:projectId", async (request, response) => {
+    const {projectId} = request.params 
+
+    const deleteProjectQuery = `
+        DELETE FROM PROJECT
+        WHERE id=${projectId};
+    `
+
+    try{
+        await db.run(deleteProjectQuery) ;
+        response.send({message:"project removed successfull"}) ;
+    }
+    catch(error){
+        console.log(error)
+    }
+    
+})
+
+app.post('/project/create/', async (request, response) => {
+
+    const {projectName, projectType,customerId, cost,currency, description, startDate, endDate } = request.body ;
+     
+
+    const createProjectQuery = `
+        INSERT INTO PROJECT(
+            project_name, type, start_date, end_date, description, customer_id, cost, currency
+        )
+        VALUES(
+            ?, ?, ?, ?, ?, ?, ?, ?
+        )
+    `
+    
+    try{
+        const dbResponse = await db.run(createProjectQuery, [
+            projectName, projectType, 
+            startDate, endDate, 
+            description, customerId, cost,currency
+        ]) ;
+        response.send({projectId:dbResponse.lastID}) ;
+    }
+    catch(error){
+        console.log(error)
+    }
+});
+
+
+app.get("/customers", async (request, response) => {
+    const {name = ""} = request.query ;
+
+    const selectCustomersQuery = `
+        SELECT id as customerId, name AS name, email, contact_number AS contactNumber, address
+        FROM CUSTOMER
+        WHERE name LIKE '%${name}%';
+    `
+
+    const dbData = await db.all(selectCustomersQuery) ;
+
+    response.send(dbData) ;
+})
+
+app.post('/customer/create/', async (request, response) => {
+
+    const {
+        name, contactNumber, email, address
+    } = request.body ;
+
+     
+
+    const createCustomerQuery = `
+        INSERT INTO CUSTOMER(
+            name, contact_number, email, address
+        )
+        VALUES(
+            ?, ?, ?, ?
+        )
+    `
+    
+    try{
+        const dbResponse = await db.run(createCustomerQuery, [
+            name, contactNumber, email, address
+        ]) ;
+
+        response.send({customerId:dbResponse.lastID}) ;
+    }
+    catch(error){
+        console.log(error)
+    }
+});
+
+app.delete("/customer/delete/:customerId", async (request, response) => {
+    const {customerId} = request.params 
+
+    const deleteCustomerQuery = `
+        DELETE FROM CUSTOMER
+        WHERE id=${customerId};
+    `
+
+    try{
+        await db.run(deleteCustomerQuery) ;
+        response.send({message:"customer removed successfull"}) ;
+    }
+    catch(error){
+        console.log(error)
+    }
     
 })
