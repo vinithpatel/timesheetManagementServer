@@ -493,8 +493,8 @@ app.get("/projects", async (request, response) => {
     const {projectName = ""} = request.query ;
 
     const selectProjectsQuery = `
-        SELECT id as projectId, project_name AS projectName, type, start_date AS startDate, end_date AS endDate, description, customer_id AS customer, cost, currency
-        FROM PROJECT
+        SELECT PROJECT.id as projectId, project_name AS projectName, type, start_date AS startDate, end_date AS endDate, description, cost, currency, CUSTOMER.name AS customer
+        FROM PROJECT LEFT JOIN CUSTOMER ON PROJECT.customer_id = CUSTOMER.id
         WHERE project_name LIKE '%${projectName}%';
     `
 
@@ -582,7 +582,7 @@ app.get("/customers", async (request, response) => {
     const {name = ""} = request.query ;
 
     const selectCustomersQuery = `
-        SELECT id as customerId, name AS name, email, contact_number AS contactNumber, address
+        SELECT id as customerId, name AS name, email,contact_person AS contactPerson, contact_number AS contactNumber, address
         FROM CUSTOMER
         WHERE name LIKE '%${name}%';
     `
@@ -595,23 +595,23 @@ app.get("/customers", async (request, response) => {
 app.post('/customer/create/', async (request, response) => {
 
     const {
-        name, contactNumber, email, address
+        name, contactPerson, contactNumber, email, address
     } = request.body ;
 
      
 
     const createCustomerQuery = `
         INSERT INTO CUSTOMER(
-            name, contact_number, email, address
+            name, contact_number, email, address, contact_person
         )
         VALUES(
-            ?, ?, ?, ?
+            ?, ?, ?, ?, ?
         )
     `
     
     try{
         const dbResponse = await db.run(createCustomerQuery, [
-            name, contactNumber, email, address
+            name, contactNumber, email, address, contactPerson
         ]) ;
 
         response.send({customerId:dbResponse.lastID}) ;
