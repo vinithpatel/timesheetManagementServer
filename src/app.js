@@ -437,6 +437,121 @@ app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (req
 
 })
 
+app.get('/timesheet/employee/:employeeId/custom_export/', async (request, response) => {
+
+    const {employeeId} = request.params;
+    const {startDate, endDate} = request.query ;
+    
+
+    //const [year, month] = monthValue.split("-") ;
+
+    let date = new Date(startDate) ;
+    const year = date.getFullYear() ;
+    
+    const firstWeekNumber = getWeek(date, {weekStartsOn:1, firstWeekContainsDate:2})
+    const firstWeekNumberFormat = `${year}-W${firstWeekNumber}`
+
+    const monthSecondWeekDate = nextMonday(date) ;
+    const secondWeekFirstDayFormat = format(monthSecondWeekDate, 'yyyy-MM-dd') ;
+
+
+    const columnNames = ['COALESCE(monday,0)', 'COALESCE(tuesday,0)','COALESCE(wednesday,0)' , 'COALESCE(thursday,0)', 'COALESCE(friday,0)', 'COALESCE(satuarday, 0)', 'COALESCE(sunday, 0)'] ;
+
+    let dayOfWeek = getDay(date) ;
+
+    if(dayOfWeek === 0){
+        dayOfWeek = 6 ;
+    }else{
+        dayOfWeek -= 1
+    }
+    const firstWeekColumnNames = columnNames.slice(dayOfWeek).join('+');
+
+
+    // date.setMonth(date.getMonth() + 1) ;
+    // date.setDate(0) ;
+    
+    date = new Date(endDate) ;
+
+    const dateEndWeekNumber = getWeek(date, {weekStartsOn:1, firstWeekContainsDate:2})
+    const endWeekNumberFormat = `${year}-W${dateEndWeekNumber}`
+
+    const dateEndPreviousWeekDate = previousSunday(date) ;
+    const dateEndtPreviousWeekFormat = format(dateEndPreviousWeekDate, 'yyyy-MM-dd') ;
+
+    dayOfWeek = getDay(date) ;
+
+    if(dayOfWeek === 0){
+        dayOfWeek = 7 ;
+    }
+
+    const lastWeekColumnNames = columnNames.slice(0, dayOfWeek).join('+') ;
+
+    // console.log(firstWeekNumberFormat)
+    // console.log(secondWeekFirstDayFormat)
+    // console.log(firstWeekColumnNames)
+
+    // console.log(endWeekNumberFormat)
+    // console.log(monthEndtPreviousWeekFormat)
+    // console.log(lastWeekColumnNames)
+
+    const firstWeekSelectQuery = `
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        SUM(${firstWeekColumnNames}) AS total,
+        SUM((${firstWeekColumnNames}) * RATE.rate/8) AS cost, Rate.rate AS rate
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
+        WHERE TIMESHEET.week LIKE '%${firstWeekNumberFormat}%' AND TIMESHEET.employee_id LIKE '%${employeeId}%'
+        GROUP BY projectId 
+    `
+
+    const lastWeekSelectQuery = `
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        SUM(${lastWeekColumnNames}) AS total,
+        SUM((${lastWeekColumnNames}) * RATE.rate/8) AS cost,Rate.rate AS rate
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
+        WHERE TIMESHEET.week LIKE '%${endWeekNumberFormat}%' AND TIMESHEET.employee_id LIKE '%${employeeId}%'
+        GROUP BY projectId 
+    `
+
+    const middleWeeksSelectQuery = `
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total, 
+        SUM((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * Rate.rate/8) AS cost, Rate.rate AS rate
+
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON project.id = TIMESHEET_PROJECT.project_id JOIN RATE ON (RATE.position_id = EMPLOYEE.position_id AND RATE.project_id = TIMESHEET_PROJECT.project_id)
+        WHERE TIMESHEET.id IN (SELECT TIMESHEET.id AS id 
+            FROM TIMESHEET
+            WHERE TIMESHEET.employee_id LIKE '%${employeeId}%' AND TIMESHEET.start_date >= '${secondWeekFirstDayFormat}' AND TIMESHEET.end_date <= '${dateEndtPreviousWeekFormat}')
+        GROUP BY projectId 
+    `
+
+    const selectMonthQuery = `
+            WITH FirstWeek AS (
+                ${firstWeekSelectQuery}
+            ),
+            MiddleWeek AS (
+                ${middleWeeksSelectQuery}
+            ),
+            LastWeek AS (
+                ${lastWeekSelectQuery}
+            )
+            SELECT projectId, projectName, SUM(total) AS total, SUM(cost) AS cost
+            FROM (
+                SELECT * FROM FirstWeek
+                UNION ALL
+                SELECT * FROM MiddleWeek
+                UNION ALL
+                SELECT * FROM LastWeek
+            ) AS CombineQuery
+            GROUP BY projectId ;
+    `
+
+    const data = await db.all(selectMonthQuery)
+    response.send(data) ;
+
+})
+
+
+
 app.get('/timesheet/employee/:employeeId/weekly_export/:weekValue', async (request, response) => {
     const {employeeId,  weekValue} = request.params ;
     console.log(employeeId)
@@ -455,6 +570,8 @@ app.get('/timesheet/employee/:employeeId/weekly_export/:weekValue', async (reque
     response.send(data) ;
     
 })
+
+
 
 app.get("/employee/:employeeId", async (request, response) => {
     const {employeeId} = request.params ;
@@ -493,7 +610,7 @@ app.get("/projects", async (request, response) => {
     const {projectName = ""} = request.query ;
 
     const selectProjectsQuery = `
-        SELECT PROJECT.id as projectId, project_name AS projectName, type, start_date AS startDate, end_date AS endDate, description, cost, currency, CUSTOMER.name AS customer
+        SELECT PROJECT.id as projectId, project_name AS projectName, type, start_date AS startDate, end_date AS endDate, description,cost_type AS costType, cost, currency, CUSTOMER.name AS customer
         FROM PROJECT LEFT JOIN CUSTOMER ON PROJECT.customer_id = CUSTOMER.id
         WHERE project_name LIKE '%${projectName}%';
     `
@@ -552,15 +669,15 @@ app.delete("/project/delete/:projectId", async (request, response) => {
 
 app.post('/project/create/', async (request, response) => {
 
-    const {projectName, projectType,customerId, cost,currency, description, startDate, endDate } = request.body ;
+    const {projectName, projectType,customerId,costType, cost,currency, description, startDate, endDate } = request.body ;
      
 
     const createProjectQuery = `
         INSERT INTO PROJECT(
-            project_name, type, start_date, end_date, description, customer_id, cost, currency
+            project_name, type, start_date, end_date, description, customer_id, cost, currency, cost_type
         )
         VALUES(
-            ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
     `
     
@@ -568,7 +685,7 @@ app.post('/project/create/', async (request, response) => {
         const dbResponse = await db.run(createProjectQuery, [
             projectName, projectType, 
             startDate, endDate, 
-            description, customerId, cost,currency
+            description, customerId, cost,currency,costType
         ]) ;
         response.send({projectId:dbResponse.lastID}) ;
     }
@@ -621,6 +738,7 @@ app.post('/customer/create/', async (request, response) => {
     }
 });
 
+
 app.delete("/customer/delete/:customerId", async (request, response) => {
     const {customerId} = request.params 
 
@@ -637,4 +755,57 @@ app.delete("/customer/delete/:customerId", async (request, response) => {
         console.log(error)
     }
     
+})
+
+
+app.post("/employee/create", async (request, response) => {
+
+    const {
+        employeeName,
+        contactNumber,
+        email,
+        doj,
+        positionId,
+        department,
+        address,
+    } = request.body ;
+
+    const createEmployeeQuery = `
+        INSERT INTO EMPLOYEE(
+            name, contact_number, email, doj, position_id, department,address,password, is_admin
+        )
+        VALUES(
+            ?, ?, ?, ?, ?, ?, ?,'user@123', 0
+        )
+    `
+    
+    try{
+        const dbResponse = await db.run(createEmployeeQuery, [
+            employeeName,
+            contactNumber,
+            email,
+            doj,
+            positionId,
+            department,
+            address,
+        ]) ;
+
+        response.send({employeeId:dbResponse.lastID}) ;
+    }
+    catch(error){
+        console.log(error)
+    }
+    
+})
+
+app.get('/positions', async (request, response) => {
+    
+    const selectPositionQuery = `
+        SELECT id AS positionId, position_name AS positionName
+        FROM POSITION ;
+    `
+
+    const dbData = await db.all(selectPositionQuery) ;
+
+    response.send(dbData) ;
 })
