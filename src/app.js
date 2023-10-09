@@ -42,7 +42,7 @@ app.post("/login", async (request, response) => {
     const {employeeId, password} = request.body 
 
     const selectEmployeeQuery = `
-        SELECT id AS employeeId, name AS employeeName, password, email, is_admin AS isAdmin
+        SELECT id AS employeeId, name AS employeeName, password, official_mail AS officialMail, is_admin AS isAdmin
         FROM EMPLOYEE
         WHERE id LIKE '%${employeeId}%' ;
     ` 
@@ -59,12 +59,18 @@ app.post("/login", async (request, response) => {
         response.send({text:"Invalid Password"}) ;
     }
     else{
-        response.send({
-            employeeId:employee.employeeId,
-            employeeName:employee.employeeName,
-            email:employee.email, 
-            isAdmin: employee.isAdmin === 0 ? false : true ,
-        }) ;  
+
+        const getEmployeeDetailsQuery = `
+            SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName,EMPLOYEE.personal_mail AS personalMail, EMPLOYEE.official_mail AS officialMail, EMPLOYEE.is_admin AS isAdmin, 
+            POSITION.position_name AS positionName, DEPARTMENT.name AS departmentName, 
+            TEMP_EMPLOYEE.name AS reportingManagerName, TEMP_EMPLOYEE.official_mail AS reportingManagerMail 
+            FROM EMPLOYEE JOIN POSITION ON EMPLOYEE.position_id = POSITION.id JOIN DEPARTMENT ON DEPARTMENT.id = EMPLOYEE.department_id JOIN EMPLOYEE AS TEMP_EMPLOYEE ON EMPLOYEE.reporting_manager_id = TEMP_EMPLOYEE.id
+            WHERE EMPLOYEE.id LIKE '%${employeeId}%' ;
+        `
+
+        const dbData = await db.get(getEmployeeDetailsQuery) ;
+
+        response.send(dbData !== undefined ? dbData : {}) ;
     }
 }) ;
 
@@ -212,7 +218,7 @@ app.get('/timesheet/:timeSheetId', async (request, response) => {
     const {timeSheetId} = request.params ;
 
     const selectTimeSheetQuery = `
-        SELECT TIMESHEET.id AS timeSheetId, TIMESHEET.employee_id AS employeeId, EMPLOYEE.name AS employeeName, week, status, start_date AS startDate, end_date AS endDate
+        SELECT TIMESHEET.id AS timeSheetId, TIMESHEET.employee_id AS employeeId, EMPLOYEE.name AS employeeName,EMPLOYEE.official_mail AS officialMail, week, status, start_date AS startDate, end_date AS endDate
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id
         WHERE TIMESHEET.id = '${timeSheetId}';
     `
@@ -626,7 +632,7 @@ app.get("/employees", async (request, response) => {
     const  {employeeId = "", employeeName = ""} = request.query ;
 
     const selectEmployeesQuery = `
-        SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName, EMPLOYEE.email AS employeeEmail, EMPLOYEE.is_admin AS isAdmin, POSITION.position_name AS positionName
+        SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName, EMPLOYEE.official_mail AS employeeEmail, EMPLOYEE.is_admin AS isAdmin, POSITION.position_name AS positionName
         FROM EMPLOYEE JOIN POSITION ON EMPLOYEE.position_id = POSITION.id
         WHERE EMPLOYEE.id LIKE '%${employeeId}%' AND EMPLOYEE.name LIKE '%${employeeName}%';
     `
@@ -793,7 +799,8 @@ app.post("/employee/create", async (request, response) => {
     const {
         employeeName,
         contactNumber,
-        email,
+        personalMail,
+        officialMail,
         doj,
         positionId,
         departmentId,
@@ -803,7 +810,7 @@ app.post("/employee/create", async (request, response) => {
 
     const createEmployeeQuery = `
         INSERT INTO EMPLOYEE(
-            name, contact_number, email, doj, position_id, department_id,address,password, reporting_manager_id
+            name, contact_number, personal_mail,official_mail, doj, position_id, department_id,address,password, reporting_manager_id
         )
         VALUES(
             ?, ?, ?, ?, ?, ?, ?,'user@123', ?
@@ -814,7 +821,8 @@ app.post("/employee/create", async (request, response) => {
         const dbResponse = await db.run(createEmployeeQuery, [
             employeeName,
             contactNumber,
-            email,
+            personalMail,
+            officialMail,
             doj,
             positionId,
             departmentId,
