@@ -127,6 +127,7 @@ app.get('/timesheet/employee/:employee_id', async(request, response) => {
    
 })
 
+
 app.post("/timesheet/create", async (request, response) => {
     const {employeeId, week, startDate, endDate} = request.body ;
 
@@ -159,6 +160,35 @@ app.post("/timesheet/create", async (request, response) => {
         response.send({timeSheetId:dbResponse.lastID}) ; 
     }
        
+})
+
+app.post('/timesheet/recreate/:timeSheetId', async (request, response) => {
+    const {timeSheetId} = request.params ;
+
+    const deleteProjectQuery = `
+        DELETE FROM TIMESHEET_PROJECT
+        WHERE timesheet_id = ${timeSheetId} ;
+    `
+
+    const openTimeSheetQuery = `
+        UPDATE TIMESHEET
+        SET status = 'open'
+        WHERE id = ${timeSheetId} ;
+    `
+
+    try{
+        await db.run(deleteProjectQuery) ;
+        await db.run(openTimeSheetQuery) ;
+        response.send({message: 'timesheet re-opened succesfull'})
+
+    }
+    catch(error){
+        console.log(error) ;
+        response.status(404) ;
+        response.send({message:"unknow error"}) ;
+    }
+
+    
 })
 
 
@@ -766,16 +796,17 @@ app.post("/employee/create", async (request, response) => {
         email,
         doj,
         positionId,
-        department,
+        departmentId,
         address,
+        reportingManagerId
     } = request.body ;
 
     const createEmployeeQuery = `
         INSERT INTO EMPLOYEE(
-            name, contact_number, email, doj, position_id, department,address,password, is_admin
+            name, contact_number, email, doj, position_id, department_id,address,password, reporting_manager_id
         )
         VALUES(
-            ?, ?, ?, ?, ?, ?, ?,'user@123', 0
+            ?, ?, ?, ?, ?, ?, ?,'user@123', ?
         )
     `
     
@@ -786,8 +817,9 @@ app.post("/employee/create", async (request, response) => {
             email,
             doj,
             positionId,
-            department,
+            departmentId,
             address,
+            reportingManagerId
         ]) ;
 
         response.send({employeeId:dbResponse.lastID}) ;
@@ -797,6 +829,27 @@ app.post("/employee/create", async (request, response) => {
     }
     
 })
+
+app.post("/employee/delete/:employeeId", async (request, response) => {
+
+    const {employeeId} = request.params ;
+
+    const deleteEmployeeQuery = `
+        DELETE FROM EMPLOYEE
+        WHERE id = ?
+    `
+    
+    try{
+        await db.run(deleteEmployeeQuery, [employeeId])
+
+        response.send({message:"Employee deleted"}) ;
+    }
+    catch(error){
+        console.log(error)
+    }
+    
+})
+
 
 app.get('/positions', async (request, response) => {
     
@@ -808,4 +861,47 @@ app.get('/positions', async (request, response) => {
     const dbData = await db.all(selectPositionQuery) ;
 
     response.send(dbData) ;
+})
+
+
+app.get('/departments', async (request, response) => {
+
+    const selectDepartmentsQuery = `
+        SELECT id AS departmentId, name AS departmentName
+        FROM DEPARTMENT ;
+    `
+
+    const dbData = await db.all(selectDepartmentsQuery) ;
+
+    response.send(dbData) ;
+})
+
+
+app.get('/reporting_manager/employees/pending_timesheets/:reportingManagerId', async (request, response) => {
+    
+    const {reportingManagerId} = request.params ;
+
+    
+    const {timesheet_id = "",employee_id="",employee_name="",log_hours="", start_date, end_date,status=""} = request.query;   
+    
+    
+    const selectPendingTimeSheetsQuery = `
+    SELECT TIMESHEET.id AS timeSheetId, TIMESHEET.employee_id AS employeeId , EMPLOYEE.name AS employeeName , TIMESHEET.week AS week, TIMESHEET.status AS status, TIMESHEET.start_date AS startDate,TIMESHEET.end_date AS endDate, SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(thursday, 0)+COALESCE(friday, 0)+COALESCE(wednesday, 0)+COALESCE(satuarday, 0) +COALESCE(sunday, 0)) AS logHours 
+    FROM 
+    TIMESHEET JOIN TIMESHEET_PROJECT
+        ON TIMESHEET.id = TIMESHEET_PROJECT.timesheet_id JOIN EMPLOYEE ON TIMESHEET.employee_Id = EMPLOYEE.id  
+    WHERE TIMESHEET.id LIKE '%${timesheet_id}%' 
+            AND TIMESHEET.start_date >= '${start_date}' 
+            AND TIMESHEET.end_date <= '${end_date}'
+            AND EMPLOYEE.id LIKE '%${employee_id}%' 
+            AND EMPLOYEE.name LIKE '%${employee_name}%'
+            AND TIMESHEET.status = 'submited'
+            AND EMPLOYEE.reporting_manager_id = ${reportingManagerId}
+    GROUP BY timesheet_id
+    HAVING logHours LIKE '%${log_hours}%' 
+    ORDER BY employeeId ;
+    `
+
+    const data = await db.all(selectPendingTimeSheetsQuery) ;
+    response.send(data)
 })
