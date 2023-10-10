@@ -122,8 +122,8 @@ app.get('/timesheet/employee/:employee_id', async(request, response) => {
     const {employee_id} = request.params
     
     const selectTimeSheetQuery = `
-        SELECT id AS timeSheetId, week, status, start_date AS startDate, end_date AS endDate
-        FROM TIMESHEET 
+        SELECT TIMESHEET.id AS timeSheetId, week, status, start_date AS startDate, end_date AS endDate, EMPLOYEE.name AS employeeName, EMPLOYEE.official_mail AS officialMail
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id
         WHERE employee_id=${employee_id} AND start_date = '${start_date}' AND end_date = '${end_date}' ;
     `
 
@@ -894,7 +894,7 @@ app.get('/reporting_manager/employees/pending_timesheets/:reportingManagerId', a
     
     
     const selectPendingTimeSheetsQuery = `
-    SELECT TIMESHEET.id AS timeSheetId, TIMESHEET.employee_id AS employeeId , EMPLOYEE.name AS employeeName , TIMESHEET.week AS week, TIMESHEET.status AS status, TIMESHEET.start_date AS startDate,TIMESHEET.end_date AS endDate, SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(thursday, 0)+COALESCE(friday, 0)+COALESCE(wednesday, 0)+COALESCE(satuarday, 0) +COALESCE(sunday, 0)) AS logHours 
+    SELECT TIMESHEET.id AS timeSheetId, TIMESHEET.employee_id AS employeeId , EMPLOYEE.name AS employeeName , TIMESHEET.week AS week, TIMESHEET.status AS status, TIMESHEET.start_date AS startDate,TIMESHEET.end_date AS endDate, SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(thursday, 0)+COALESCE(friday, 0)+COALESCE(wednesday, 0)+COALESCE(satuarday, 0) +COALESCE(sunday, 0)) AS logHours, EMPLOYEE.official_mail AS officialMail
     FROM 
     TIMESHEET JOIN TIMESHEET_PROJECT
         ON TIMESHEET.id = TIMESHEET_PROJECT.timesheet_id JOIN EMPLOYEE ON TIMESHEET.employee_Id = EMPLOYEE.id  
