@@ -75,11 +75,13 @@ app.post("/login", async (request, response) => {
 }) ;
 
 
-app.get("/projects/:employeeId", async (request, response) => {
+app.get("/projects/employee/:employeeId", async (request, response) => {
     const {employeeId} = request.params ;
 
     const selectProjectsQuery = `
-            SELECT PROJECT.id AS projectId, PROJECT.project_name AS projectName
+            SELECT PROJECT.id AS projectId, PROJECT.project_name AS projectName, 
+            EMPLOYEE_PROJECT.start_date AS startDate, EMPLOYEE_PROJECT.end_date AS endDate, EMPLOYEE_PROJECT.role_id AS roleId, EMPLOYEE_PROJECT.cost AS cost, 
+            EMPLOYEE_PROJECT.currency AS currency, PROJECT.type AS projectType
             FROM EMPLOYEE_PROJECT JOIN PROJECT ON EMPLOYEE_PROJECT.project_id = PROJECT.id
             WHERE EMPLOYEE_PROJECT.employee_id = ${employeeId} ;
     `;
@@ -613,7 +615,7 @@ app.get("/employee/:employeeId", async (request, response) => {
     const {employeeId} = request.params ;
 
     const selectEmployeeQuery = `
-        SELECT EMPLOYEE.id AS employeeId, name AS employeeName, email AS employeeEmail, is_admin AS isAdmin , POSITION.position_name AS position
+        SELECT EMPLOYEE.id AS employeeId, name AS employeeName, official_mail AS employeeEmail, is_admin AS isAdmin , POSITION.position_name AS position
         FROM EMPLOYEE JOIN POSITION ON EMPLOYEE.position_id = POSITION.id
         WHERE EMPLOYEE.id = '${employeeId}' ;
     `
@@ -646,7 +648,7 @@ app.get("/projects", async (request, response) => {
     const {projectName = ""} = request.query ;
 
     const selectProjectsQuery = `
-        SELECT PROJECT.id as projectId, project_name AS projectName, type, start_date AS startDate, end_date AS endDate, description,cost_type AS costType, cost, currency, CUSTOMER.name AS customer
+        SELECT PROJECT.id as projectId, project_name AS projectName, type AS projectType, start_date AS startDate, end_date AS endDate, description,cost_type AS costType, cost, currency, CUSTOMER.name AS customer
         FROM PROJECT LEFT JOIN CUSTOMER ON PROJECT.customer_id = CUSTOMER.id
         WHERE project_name LIKE '%${projectName}%';
     `
@@ -656,34 +658,106 @@ app.get("/projects", async (request, response) => {
     response.send(dbData) ;
 })
 
-app.put("/projects/save/:employeeId", async (request, response) => {
+app.put("/project/employee/save/:employeeId", async (request, response) => {
     const {employeeId} = request.params ;
+    const {projectId,startDate, endDate, roleId, cost, currency} = request.body ;
 
-    const {projectsList} = request.body ;
-    console.log(projectsList)
-
-    const deleteProjectsQuery = `
-        DELETE FROM EMPLOYEE_PROJECT
-        WHERE employee_id = '${employeeId}';
-    `
-
-    await db.run(deleteProjectsQuery)
-
-    for(let project of projectsList){
-        const addProjectToEmployeeQuery = `
+    const addProjectToEmployeeQuery = `
         INSERT INTO EMPLOYEE_PROJECT(
-            employee_id, project_id
+            employee_id, project_id, role_id, cost,currency, start_date, end_date
         )
         VALUES (
-            ${employeeId}, ${project.projectId}
-        )
-    `
-    await db.run(addProjectToEmployeeQuery)
-    }
+            ?, ?, ?, ?, ?, ?, ?
+        ) ;
+    ` 
 
-    response.send({message:"projects added successfull"})
+    try{
+        await db.run(addProjectToEmployeeQuery, [
+            employeeId, projectId, roleId, cost, currency, startDate, endDate
+        ])
+
+        response.send({message:"project added successfull"}) ;
+    }
+    catch(error){
+        response.status(404) ;
+        response.send("unknow error occured") ;
+    }
     
 })
+
+app.delete('/project/employee/remove/:employeeId', async (request, response) => {
+    const {employeeId} = request.params ;
+    const {projectId} = request.body ;
+
+    const deleteEmployeeProjectQuery = `
+        DELETE FROM EMPLOYEE_PROJECT
+        WHERE employee_id = ${employeeId} AND project_id = ${projectId} ;
+    `
+
+    try{
+        await db.run(deleteEmployeeProjectQuery)
+        response.send({message:"Project Removed Successfull"})
+    }
+    catch(error){
+        response.status(404) ;
+        response.send({message:"unknow error occured"}) ;
+    }
+})
+
+app.put('/project/employee/update/:employeeId', async (request, response) => {
+    const {employeeId} = request.params ;
+    
+    const {projectId,startDate, endDate, roleId, cost, currency} = request.body ;
+
+    const updateProjectOfEmployeeQuery = `
+        UPDATE EMPLOYEE_PROJECT
+        SET start_date = ? , end_date = ? , role_id = ?, cost = ?, currency = ?
+        WHERE project_id = ${projectId} AND employee_id = ${employeeId} ;
+    ` 
+
+    try{
+        await db.run(updateProjectOfEmployeeQuery, [
+            startDate, endDate, roleId, cost, currency 
+        ])
+
+        response.send({message:"project updated successfull"}) ;
+    }
+    catch(error){
+        response.status(404) ;
+        response.send("unknow error occured") ;
+    }
+
+})
+
+
+// app.put("/projects/save/:employeeId", async (request, response) => {
+//     const {employeeId} = request.params ;
+
+//     const {projectsList} = request.body ;
+//     console.log(projectsList)
+
+//     const deleteProjectsQuery = `
+//         DELETE FROM EMPLOYEE_PROJECT
+//         WHERE employee_id = '${employeeId}';
+//     `
+
+//     await db.run(deleteProjectsQuery)
+
+//     for(let project of projectsList){
+//         const addProjectToEmployeeQuery = `
+//         INSERT INTO EMPLOYEE_PROJECT(
+//             employee_id, project_id
+//         )
+//         VALUES (
+//             ${employeeId}, ${project.projectId}
+//         )
+//     `
+//     await db.run(addProjectToEmployeeQuery)
+//     }
+
+//     response.send({message:"projects added successfull"})
+    
+// })
 
 app.delete("/project/delete/:projectId", async (request, response) => {
     const {projectId} = request.params 
