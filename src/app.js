@@ -470,7 +470,7 @@ app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (req
             LastWeek AS (
                 ${lastWeekSelectQuery}
             )
-            SELECT projectId, projectName, SUM(total) AS total, SUM(cost) AS cost
+            SELECT projectId, projectName, SUM(total) AS total, SUM(cost) AS cost, rate, currency
             FROM (
                 SELECT * FROM FirstWeek
                 UNION ALL
@@ -478,7 +478,7 @@ app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (req
                 UNION ALL
                 SELECT * FROM LastWeek
             ) AS CombineQuery
-            GROUP BY projectId ;
+            GROUP BY projectId, rate ;
     `
 
     const data = await db.all(selectMonthQuery)
@@ -544,7 +544,7 @@ app.get('/timesheet/employee/:employeeId/custom_export/', async (request, respon
     // console.log(lastWeekColumnNames)
 
     const firstWeekSelectQuery = `
-        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType,
         SUM(${firstWeekColumnNames}) AS total,
         SUM((${firstWeekColumnNames}) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost,TIMESHEET_PROJECT.rate, TIMESHEET_PROJECT.currency
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id
@@ -553,7 +553,7 @@ app.get('/timesheet/employee/:employeeId/custom_export/', async (request, respon
     `
 
     const lastWeekSelectQuery = `
-        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType,
         SUM(${lastWeekColumnNames}) AS total,
         SUM((${lastWeekColumnNames}) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost,TIMESHEET_PROJECT.rate, TIMESHEET_PROJECT.currency
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id 
@@ -562,7 +562,7 @@ app.get('/timesheet/employee/:employeeId/custom_export/', async (request, respon
     `
 
     const middleWeeksSelectQuery = `
-        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType,
         SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total, 
         SUM((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost,TIMESHEET_PROJECT.rate, TIMESHEET_PROJECT.currency
 
@@ -583,7 +583,7 @@ app.get('/timesheet/employee/:employeeId/custom_export/', async (request, respon
             LastWeek AS (
                 ${lastWeekSelectQuery}
             )
-            SELECT projectId, projectName, SUM(total) AS total, SUM(cost) AS cost
+            SELECT projectId, projectName, SUM(total) AS total, SUM(cost) AS cost, rate, currency, projectType
             FROM (
                 SELECT * FROM FirstWeek
                 UNION ALL
@@ -591,7 +591,7 @@ app.get('/timesheet/employee/:employeeId/custom_export/', async (request, respon
                 UNION ALL
                 SELECT * FROM LastWeek
             ) AS CombineQuery
-            GROUP BY projectId ;
+            GROUP BY projectId, rate ;
     `
 
     const data = await db.all(selectMonthQuery)
@@ -615,7 +615,7 @@ app.get('/timesheet/employee/:employeeId/weekly_export/:weekValue', async (reque
         `
 
     const data = await db.all(selectTimeSheetQuery)
-    console.log(data) ;
+ 
     response.send(data) ;
     
 })
