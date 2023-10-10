@@ -80,7 +80,7 @@ app.get("/projects/employee/:employeeId", async (request, response) => {
 
     const selectProjectsQuery = `
             SELECT PROJECT.id AS projectId, PROJECT.project_name AS projectName, 
-            EMPLOYEE_PROJECT.start_date AS startDate, EMPLOYEE_PROJECT.end_date AS endDate, EMPLOYEE_PROJECT.role_id AS roleId, EMPLOYEE_PROJECT.cost AS cost, 
+            EMPLOYEE_PROJECT.start_date AS startDate, EMPLOYEE_PROJECT.end_date AS endDate, EMPLOYEE_PROJECT.role_id AS roleId, EMPLOYEE_PROJECT.rate AS rate, 
             EMPLOYEE_PROJECT.currency AS currency, PROJECT.type AS projectType
             FROM EMPLOYEE_PROJECT JOIN PROJECT ON EMPLOYEE_PROJECT.project_id = PROJECT.id
             WHERE EMPLOYEE_PROJECT.employee_id = ${employeeId} ;
@@ -660,11 +660,11 @@ app.get("/projects", async (request, response) => {
 
 app.put("/project/employee/save/:employeeId", async (request, response) => {
     const {employeeId} = request.params ;
-    const {projectId,startDate, endDate, roleId, cost, currency} = request.body ;
+    const {projectId,startDate, endDate, roleId, rate, currency} = request.body ;
 
     const addProjectToEmployeeQuery = `
         INSERT INTO EMPLOYEE_PROJECT(
-            employee_id, project_id, role_id, cost,currency, start_date, end_date
+            employee_id, project_id, role_id, rate,currency, start_date, end_date
         )
         VALUES (
             ?, ?, ?, ?, ?, ?, ?
@@ -673,7 +673,7 @@ app.put("/project/employee/save/:employeeId", async (request, response) => {
 
     try{
         await db.run(addProjectToEmployeeQuery, [
-            employeeId, projectId, roleId, cost, currency, startDate, endDate
+            employeeId, projectId, roleId, rate, currency, startDate, endDate
         ])
 
         response.send({message:"project added successfull"}) ;
@@ -707,17 +707,17 @@ app.delete('/project/employee/remove/:employeeId', async (request, response) => 
 app.put('/project/employee/update/:employeeId', async (request, response) => {
     const {employeeId} = request.params ;
     
-    const {projectId,startDate, endDate, roleId, cost, currency} = request.body ;
+    const {projectId,startDate, endDate, roleId, rate, currency} = request.body ;
 
     const updateProjectOfEmployeeQuery = `
         UPDATE EMPLOYEE_PROJECT
-        SET start_date = ? , end_date = ? , role_id = ?, cost = ?, currency = ?
+        SET start_date = ? , end_date = ? , role_id = ?, rate = ?, currency = ?
         WHERE project_id = ${projectId} AND employee_id = ${employeeId} ;
     ` 
 
     try{
         await db.run(updateProjectOfEmployeeQuery, [
-            startDate, endDate, roleId, cost, currency 
+            startDate, endDate, roleId, rate, currency 
         ])
 
         response.send({message:"project updated successfull"}) ;
