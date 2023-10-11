@@ -290,7 +290,7 @@ app.put("/timesheet/save/:timeSheetId", async (request, response) => {
         const insertTimeSheetProjectsQuery = `
             INSERT INTO TIMESHEET_PROJECT(
                 timesheet_id, project_id, monday, tuesday, wednesday, thursday, friday, satuarday, sunday,
-                monday_comment, tuesday_comment, wednesday_comment, thursday_comment, friday_comment, satuarday_comment, sunday_comment, rate, currency
+                monday_comment, tuesday_comment, wednesday_comment, thursday_comment, friday_comment, satuarday_comment, sunday_comment, rate, currency, role_id
             )
             VALUES(
                 ${timeSheetId}, ${row.projectId}, ${row.monday}, ${row.tuesday}, ${row.wednesday}, ${row.thursday}, ${row.friday}, ${row.satuarday}, ${row.sunday},
@@ -304,6 +304,11 @@ app.put("/timesheet/save/:timeSheetId", async (request, response) => {
                     SELECT currency
                     FROM EMPLOYEE_PROJECT JOIN TIMESHEET ON TIMESHEET.employee_id = EMPLOYEE_PROJECT.employee_id
                     WHERE TIMESHEET.id = ${timeSheetId} AND EMPLOYEE_PROJECT.project_id = ${row.projectId} 
+                ),
+                (
+                    SELECT role_id
+                    FROM EMPLOYEE_PROJECT JOIN TIMESHEET ON TIMESHEET.employee_id = EMPLOYEE_PROJECT.employee_id
+                    WHERE TIMESHEET.id = ${timeSheetId} AND EMPLOYEE_PROJECT.project_id = ${row.projectId}
                 )
             ) ;
         `
@@ -431,33 +436,36 @@ app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (req
     // console.log(lastWeekColumnNames)
 
     const firstWeekSelectQuery = `
-        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,PROJECT.type AS projectType,CUSTOMER.name AS customerName,
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,PROJECT.type AS projectType,CUSTOMER.name AS customerName,POSITION.position_name AS positionName,
         SUM(${firstWeekColumnNames}) AS total,
         SUM((${firstWeekColumnNames}) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost,TIMESHEET_PROJECT.rate, TIMESHEET_PROJECT.currency
-        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id LEFT JOIN CUSTOMER ON CUSTOMER.id = PROJECT.customer_id
+        FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id LEFT JOIN CUSTOMER ON CUSTOMER.id = PROJECT.customer_id 
+        LEFT JOIN POSITION ON TIMESHEET_PROJECT.role_id = POSITION.id
         WHERE TIMESHEET.week LIKE '%${firstWeekNumberFormat}%' AND TIMESHEET.employee_id LIKE '%${employeeId}%'
-        GROUP BY projectId 
+        GROUP BY projectId, rate, positionName
     `
 
     const lastWeekSelectQuery = `
-        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,PROJECT.type AS projectType, CUSTOMER.name AS customerName,
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,PROJECT.type AS projectType, CUSTOMER.name AS customerName,POSITION.position_name AS positionName,
         SUM(${lastWeekColumnNames}) AS total,
         SUM((${lastWeekColumnNames}) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost,TIMESHEET_PROJECT.rate, TIMESHEET_PROJECT.currency
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id LEFT JOIN CUSTOMER ON CUSTOMER.id = PROJECT.customer_id
+        LEFT JOIN POSITION ON TIMESHEET_PROJECT.role_id = POSITION.id
         WHERE TIMESHEET.week LIKE '%${endWeekNumberFormat}%' AND TIMESHEET.employee_id LIKE '%${employeeId}%'
-        GROUP BY projectId 
+        GROUP BY projectId, rate, positionName
     `
 
     const middleWeeksSelectQuery = `
-        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,PROJECT.type AS projectType,CUSTOMER.name AS customerName,
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName,PROJECT.type AS projectType,CUSTOMER.name AS customerName,POSITION.position_name AS positionName,
         SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total, 
         SUM((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost,TIMESHEET_PROJECT.rate, TIMESHEET_PROJECT.currency
 
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON project.id = TIMESHEET_PROJECT.project_id LEFT JOIN CUSTOMER ON CUSTOMER.id = PROJECT.customer_id
+        LEFT JOIN POSITION ON TIMESHEET_PROJECT.role_id = POSITION.id
         WHERE TIMESHEET.id IN (SELECT TIMESHEET.id AS id 
             FROM TIMESHEET
             WHERE TIMESHEET.employee_id LIKE '%${employeeId}%' AND TIMESHEET.start_date >= '${secondWeekFirstDayFormat}' AND TIMESHEET.end_date <= '${monthEndtPreviousWeekFormat}')
-        GROUP BY projectId 
+        GROUP BY projectId, rate, positionName
     `
 
     const selectMonthQuery = `
@@ -470,7 +478,7 @@ app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (req
             LastWeek AS (
                 ${lastWeekSelectQuery}
             )
-            SELECT projectId, projectName, SUM(total) AS total, SUM(cost) AS cost, rate, currency, projectType, customerName
+            SELECT projectId, projectName, SUM(total) AS total, SUM(cost) AS cost, rate, currency, projectType, customerName, positionName
             FROM (
                 SELECT * FROM FirstWeek
                 UNION ALL
@@ -478,7 +486,7 @@ app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (req
                 UNION ALL
                 SELECT * FROM LastWeek
             ) AS CombineQuery
-            GROUP BY projectId, rate ;
+            GROUP BY projectId, rate, positionName;
     `
 
     const data = await db.all(selectMonthQuery)
@@ -544,33 +552,36 @@ app.get('/timesheet/employee/:employeeId/custom_export/', async (request, respon
     // console.log(lastWeekColumnNames)
 
     const firstWeekSelectQuery = `
-        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType,CUSTOMER.name AS customerName,
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType,CUSTOMER.name AS customerName,POSITION.position_name AS positionName,
         SUM(${firstWeekColumnNames}) AS total,
         SUM((${firstWeekColumnNames}) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost,TIMESHEET_PROJECT.rate, TIMESHEET_PROJECT.currency
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id LEFT JOIN CUSTOMER ON CUSTOMER.id = PROJECT.customer_id
+        LEFT JOIN POSITION ON TIMESHEET_PROJECT.role_id = POSITION.id
         WHERE TIMESHEET.week LIKE '%${firstWeekNumberFormat}%' AND TIMESHEET.employee_id LIKE '%${employeeId}%'
-        GROUP BY projectId 
+        GROUP BY projectId, rate, positionName
     `
 
     const lastWeekSelectQuery = `
-        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType,CUSTOMER.name AS customerName,
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType,CUSTOMER.name AS customerName,POSITION.position_name AS positionName,
         SUM(${lastWeekColumnNames}) AS total,
         SUM((${lastWeekColumnNames}) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost,TIMESHEET_PROJECT.rate, TIMESHEET_PROJECT.currency
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON PROJECT.id = TIMESHEET_PROJECT.project_id LEFT JOIN CUSTOMER ON CUSTOMER.id = PROJECT.customer_id
+        LEFT JOIN POSITION ON TIMESHEET_PROJECT.role_id = POSITION.id
         WHERE TIMESHEET.week LIKE '%${endWeekNumberFormat}%' AND TIMESHEET.employee_id LIKE '%${employeeId}%'
-        GROUP BY projectId 
+        GROUP BY projectId, rate, positionName
     `
 
     const middleWeeksSelectQuery = `
-        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType, CUSTOMER.name AS customerName,
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType,CUSTOMER.name AS customerName,POSITION.position_name AS positionName,
         SUM(COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total, 
         SUM((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost,TIMESHEET_PROJECT.rate, TIMESHEET_PROJECT.currency
 
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON project.id = TIMESHEET_PROJECT.project_id LEFT JOIN CUSTOMER ON CUSTOMER.id = PROJECT.customer_id
+        LEFT JOIN POSITION ON TIMESHEET_PROJECT.role_id = POSITION.id
         WHERE TIMESHEET.id IN (SELECT TIMESHEET.id AS id 
             FROM TIMESHEET
             WHERE TIMESHEET.employee_id LIKE '%${employeeId}%' AND TIMESHEET.start_date >= '${secondWeekFirstDayFormat}' AND TIMESHEET.end_date <= '${dateEndtPreviousWeekFormat}')
-        GROUP BY projectId 
+        GROUP BY projectId, rate, positionName
     `
 
     const selectMonthQuery = `
@@ -583,7 +594,7 @@ app.get('/timesheet/employee/:employeeId/custom_export/', async (request, respon
             LastWeek AS (
                 ${lastWeekSelectQuery}
             )
-            SELECT projectId, projectName, SUM(total) AS total, SUM(cost) AS cost, rate, currency, projectType, customerName
+            SELECT projectId, projectName, SUM(total) AS total, SUM(cost) AS cost, rate, currency, projectType, customerName, positionName
             FROM (
                 SELECT * FROM FirstWeek
                 UNION ALL
@@ -591,7 +602,7 @@ app.get('/timesheet/employee/:employeeId/custom_export/', async (request, respon
                 UNION ALL
                 SELECT * FROM LastWeek
             ) AS CombineQuery
-            GROUP BY projectId, rate ;
+            GROUP BY projectId, rate, positionName ;
     `
 
     const data = await db.all(selectMonthQuery)
@@ -606,12 +617,14 @@ app.get('/timesheet/employee/:employeeId/weekly_export/:weekValue', async (reque
     
     
     const selectTimeSheetQuery = `
-        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType, CUSTOMER.name AS customerName,
+        SELECT TIMESHEET_PROJECT.project_id AS projectId, PROJECT.project_name AS projectName, PROJECT.type AS projectType, CUSTOMER.name AS customerName,POSITION.position_name AS positionName,
         (COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) AS total, 
-        ((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost, TIMESHEET_PROJECT.rate, TIMESHEET_PROJECT.currency
+        ((COALESCE(monday,0)+COALESCE(tuesday,0)+COALESCE(wednesday,0)+COALESCE(thursday,0)+COALESCE(friday,0)+COALESCE(satuarday,0)+COALESCE(sunday,0)) * COALESCE(TIMESHEET_PROJECT.rate,0)) AS cost, TIMESHEET_PROJECT.rate AS rate, TIMESHEET_PROJECT.currency AS currency
 
         FROM TIMESHEET JOIN EMPLOYEE ON EMPLOYEE.id = TIMESHEET.employee_id JOIN TIMESHEET_PROJECT ON TIMESHEET_PROJECT.timesheet_id = TIMESHEET.id JOIN PROJECT ON project.id = TIMESHEET_PROJECT.project_id LEFT JOIN CUSTOMER ON CUSTOMER.id = PROJECT.customer_id
-        WHERE TIMESHEET.employee_id LIKE '%${employeeId}%' AND TIMESHEET.week LIKE '%${weekValue}%' ;
+        LEFT JOIN POSITION ON TIMESHEET_PROJECT.role_id = POSITION.id
+        WHERE TIMESHEET.employee_id LIKE '%${employeeId}%' AND TIMESHEET.week LIKE '%${weekValue}%'
+        GROUP BY projectId, rate, positionName;
         `
 
     const data = await db.all(selectTimeSheetQuery)
