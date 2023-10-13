@@ -1108,3 +1108,22 @@ app.get('/reporting_manager/employees/pending_timesheets/:reportingManagerId', a
     const data = await db.all(selectPendingTimeSheetsQuery) ;
     response.send(data)
 })
+
+app.get("/reporting_manager/employees/:reportingMangerId", async (request, response) => {
+
+    const {reportingMangerId} = request.params ;
+    
+    const selectEmployeesQuery =  `
+        SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName
+        FROM EMPLOYEE
+        WHERE EMPLOYEE.reporting_manager_id = ? ;
+    `
+
+    try{
+        const data = await db.all(selectEmployeesQuery, [reportingMangerId]) ;
+        response.send(data)
+    }
+    catch(error){
+        console.log(error) ;
+    }
+})
