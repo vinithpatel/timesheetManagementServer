@@ -132,18 +132,18 @@ app.get('/employee/profile',authenticateToken,async (request, response) => {
     const {payload} = request
     const {employeeId} = payload ;
 
-
     const getEmployeeDetailsQuery = `
             SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName,EMPLOYEE.personal_mail AS personalMail, EMPLOYEE.official_mail AS officialMail, 
             POSITION.position_name AS positionName, DEPARTMENT.name AS departmentName, DEPARTMENT.is_admin AS isAdmin,
             TEMP_EMPLOYEE.name AS reportingManagerName, TEMP_EMPLOYEE.official_mail AS reportingManagerMail 
-            FROM EMPLOYEE JOIN POSITION ON EMPLOYEE.position_id = POSITION.id JOIN DEPARTMENT ON DEPARTMENT.id = EMPLOYEE.department_id JOIN EMPLOYEE AS TEMP_EMPLOYEE ON EMPLOYEE.reporting_manager_id = TEMP_EMPLOYEE.id
+            FROM EMPLOYEE JOIN POSITION ON EMPLOYEE.position_id = POSITION.id JOIN DEPARTMENT ON DEPARTMENT.id = EMPLOYEE.department_id LEFT JOIN EMPLOYEE AS TEMP_EMPLOYEE ON EMPLOYEE.reporting_manager_id = TEMP_EMPLOYEE.id
             WHERE EMPLOYEE.id LIKE '%${employeeId}%' ;
         `
 
         const dbData = await db.get(getEmployeeDetailsQuery) ;
 
         response.send(dbData !== undefined ? dbData : {}) ;
+
 })
 
 
@@ -1032,7 +1032,7 @@ app.post("/employee/create",authenticateToken,isAdminstartor, async (request, re
     
 })
 
-app.post("/employee/delete/:employeeId",authenticateToken,isAdminstartor, async (request, response) => {
+app.delete("/employee/delete/:employeeId",authenticateToken,isAdminstartor, async (request, response) => {
 
     const {employeeId} = request.params ;
 
