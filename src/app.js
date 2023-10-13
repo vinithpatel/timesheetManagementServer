@@ -7,6 +7,8 @@ const {open} = require("sqlite") ;
 const sqlite3 = require("sqlite3") ;
 
 const {startOfWeek, endOfWeek, format, getDay, nextMonday, previousSunday, getWeek} = require("date-fns") ;
+const bcrypt = require("bcrypt") ;
+const jwt = require("jsonwebtoken") ;
 
 
 const app = express() ;
@@ -38,31 +40,102 @@ const initilizeDBAndStartServer = async () => {
 
 initilizeDBAndStartServer() ;
 
+
+const authenticateToken = (request, response, next) => {
+    let jwtToken ;
+
+    const authHeader = request.headers["authorization"];
+    
+    if(authHeader !== undefined){
+        jwtToken = authHeader.split(' ')[1] ;
+    }
+
+    if(jwtToken === undefined){
+        response.status(400) ;
+        response.send("Invalid JWT Token") ;
+    }
+    else{
+        jwt.verify(jwtToken, 'TIMESHEET_MANAGEMENT', async(error, payload) => {
+            if(error){
+                response.status(401) ;
+                response.send("Invalid JWT TOKEN") ;
+            }else{
+                request.payload = payload ;
+                next() ;
+            }
+        })
+    }
+}
+
+const isAdminstartor = async (request, response, next) => {
+    const {payload} = request ;
+    const {employeeId} = payload ;
+
+
+    const selectEmployeeQuery = `
+        SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName, password, official_mail AS officialMail, DEPARTMENT.is_admin AS isAdmin
+        FROM EMPLOYEE JOIN DEPARTMENT ON DEPARTMENT.id = EMPLOYEE.department_id 
+        WHERE EMPLOYEE.id LIKE '%${employeeId}%' ;
+    `
+
+    try{
+        const employeeObj = await db.get(selectEmployeeQuery) ;
+        if(employeeObj !== undefined && employeeObj.isAdmin === 1){
+            next() ;
+        }else{
+            response.status(403) ;
+            response.send({message:"Access Denied"}) ;
+        }
+    }
+    catch(error){
+        console.log(error)
+        console.log("error")
+    }
+
+}
+
+
 app.post("/login", async (request, response) => {
     const {employeeId, password} = request.body 
 
     const selectEmployeeQuery = `
-        SELECT id AS employeeId, name AS employeeName, password, official_mail AS officialMail, is_admin AS isAdmin
+        SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName, password, official_mail AS officialMail, is_admin AS isAdmin
         FROM EMPLOYEE
         WHERE id LIKE '%${employeeId}%' ;
     ` 
 
     const employee = await db.get(selectEmployeeQuery) ;
 
-
     if(employee === undefined){
         response.status(400) ;
         response.send({text:'Invalid User'}) ;
-    }else if(employee.password !== password){
+    }else if(! await bcrypt.compare(password,employee.password)){ 
         
         response.status(400) ;
         response.send({text:"Invalid Password"}) ;
     }
     else{
 
-        const getEmployeeDetailsQuery = `
-            SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName,EMPLOYEE.personal_mail AS personalMail, EMPLOYEE.official_mail AS officialMail, EMPLOYEE.is_admin AS isAdmin, 
-            POSITION.position_name AS positionName, DEPARTMENT.name AS departmentName, 
+        const payload = {
+            employeeId:employee.employeeId ,
+            employeeName:employee.employeeName,
+            officialMail:employee.officialMail
+        }
+
+        const jwtToken = jwt.sign(payload, 'TIMESHEET_MANAGEMENT') ;
+        response.send({jwtToken}) ;
+
+    }
+}) ;
+
+app.get('/employee/profile',authenticateToken,async (request, response) => {
+    const {payload} = request
+    const {employeeId} = payload ;
+
+
+    const getEmployeeDetailsQuery = `
+            SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName,EMPLOYEE.personal_mail AS personalMail, EMPLOYEE.official_mail AS officialMail, 
+            POSITION.position_name AS positionName, DEPARTMENT.name AS departmentName, DEPARTMENT.is_admin AS isAdmin,
             TEMP_EMPLOYEE.name AS reportingManagerName, TEMP_EMPLOYEE.official_mail AS reportingManagerMail 
             FROM EMPLOYEE JOIN POSITION ON EMPLOYEE.position_id = POSITION.id JOIN DEPARTMENT ON DEPARTMENT.id = EMPLOYEE.department_id JOIN EMPLOYEE AS TEMP_EMPLOYEE ON EMPLOYEE.reporting_manager_id = TEMP_EMPLOYEE.id
             WHERE EMPLOYEE.id LIKE '%${employeeId}%' ;
@@ -71,8 +144,7 @@ app.post("/login", async (request, response) => {
         const dbData = await db.get(getEmployeeDetailsQuery) ;
 
         response.send(dbData !== undefined ? dbData : {}) ;
-    }
-}) ;
+})
 
 
 app.get("/projects/employee/:employeeId", async (request, response) => {
@@ -383,7 +455,7 @@ app.get('/timesheet/export/:timeSheetId', async(request, response) => {
         response.send(data) ;
 });
 
-app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (request, response) => {
+app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue',authenticateToken,isAdminstartor, async (request, response) => {
 
     const {employeeId, monthValue} = request.params;
 
@@ -494,7 +566,7 @@ app.get('/timesheet/employee/:employeeId/monthly_export/:monthValue', async (req
 
 })
 
-app.get('/timesheet/employee/:employeeId/custom_export/', async (request, response) => {
+app.get('/timesheet/employee/:employeeId/custom_export/',authenticateToken,isAdminstartor, async (request, response) => {
 
     const {employeeId} = request.params;
     const {startDate, endDate} = request.query ;
@@ -612,7 +684,7 @@ app.get('/timesheet/employee/:employeeId/custom_export/', async (request, respon
 
 
 
-app.get('/timesheet/employee/:employeeId/weekly_export/:weekValue', async (request, response) => {
+app.get('/timesheet/employee/:employeeId/weekly_export/:weekValue',authenticateToken,isAdminstartor, async (request, response) => {
     const {employeeId,  weekValue} = request.params ;
     
     
@@ -635,7 +707,7 @@ app.get('/timesheet/employee/:employeeId/weekly_export/:weekValue', async (reque
 
 
 
-app.get("/employee/:employeeId", async (request, response) => {
+app.get("/employee/:employeeId",authenticateToken,isAdminstartor, async (request, response) => {
     const {employeeId} = request.params ;
 
     const selectEmployeeQuery = `
@@ -654,7 +726,7 @@ app.get("/employee/:employeeId", async (request, response) => {
     }
 })
 
-app.get("/employees", async (request, response) => {
+app.get("/employees",authenticateToken,isAdminstartor, async (request, response) => {
     const  {employeeId = "", employeeName = ""} = request.query ;
 
     const selectEmployeesQuery = `
@@ -668,7 +740,7 @@ app.get("/employees", async (request, response) => {
     response.send(dbData) ;
 })
 
-app.get("/projects", async (request, response) => {
+app.get("/projects",authenticateToken,isAdminstartor, async (request, response) => {
     const {projectName = ""} = request.query ;
 
     const selectProjectsQuery = `
@@ -682,7 +754,7 @@ app.get("/projects", async (request, response) => {
     response.send(dbData) ;
 })
 
-app.put("/project/employee/save/:employeeId", async (request, response) => {
+app.put("/project/employee/save/:employeeId",authenticateToken,isAdminstartor, async (request, response) => {
     const {employeeId} = request.params ;
     const {projectId,startDate, endDate, roleId, rate, currency} = request.body ;
 
@@ -709,7 +781,7 @@ app.put("/project/employee/save/:employeeId", async (request, response) => {
     
 })
 
-app.delete('/project/employee/remove/:employeeId', async (request, response) => {
+app.delete('/project/employee/remove/:employeeId',authenticateToken,isAdminstartor, async (request, response) => {
     const {employeeId} = request.params ;
     const {projectId} = request.body ;
 
@@ -728,7 +800,7 @@ app.delete('/project/employee/remove/:employeeId', async (request, response) => 
     }
 })
 
-app.put('/project/employee/update/:employeeId', async (request, response) => {
+app.put('/project/employee/update/:employeeId',authenticateToken,isAdminstartor, async (request, response) => {
     const {employeeId} = request.params ;
     
     const {projectId,startDate, endDate, roleId, rate, currency} = request.body ;
@@ -783,7 +855,7 @@ app.put('/project/employee/update/:employeeId', async (request, response) => {
     
 // })
 
-app.delete("/project/delete/:projectId", async (request, response) => {
+app.delete("/project/delete/:projectId",authenticateToken,isAdminstartor, async (request, response) => {
     const {projectId} = request.params 
 
     const deleteProjectQuery = `
@@ -801,7 +873,7 @@ app.delete("/project/delete/:projectId", async (request, response) => {
     
 })
 
-app.post('/project/create/', async (request, response) => {
+app.post('/project/create/',authenticateToken,isAdminstartor, async (request, response) => {
 
     const {projectName, projectType,customerId,costType, cost,currency, description, startDate, endDate } = request.body ;
      
@@ -829,7 +901,7 @@ app.post('/project/create/', async (request, response) => {
 });
 
 
-app.get("/customers", async (request, response) => {
+app.get("/customers",authenticateToken,isAdminstartor, async (request, response) => {
     const {name = ""} = request.query ;
 
     const selectCustomersQuery = `
@@ -843,7 +915,7 @@ app.get("/customers", async (request, response) => {
     response.send(dbData) ;
 })
 
-app.post('/customer/create/', async (request, response) => {
+app.post('/customer/create/',authenticateToken,isAdminstartor, async (request, response) => {
 
     const {
         name, contactPerson, contactNumber, email, address
@@ -873,7 +945,7 @@ app.post('/customer/create/', async (request, response) => {
 });
 
 
-app.delete("/customer/delete/:customerId", async (request, response) => {
+app.delete("/customer/delete/:customerId",authenticateToken,isAdminstartor, async (request, response) => {
     const {customerId} = request.params 
 
     const deleteCustomerQuery = `
@@ -892,7 +964,7 @@ app.delete("/customer/delete/:customerId", async (request, response) => {
 })
 
 
-app.post("/employee/create", async (request, response) => {
+app.post("/employee/create",authenticateToken,isAdminstartor, async (request, response) => {
 
     const {
         employeeName,
@@ -906,12 +978,14 @@ app.post("/employee/create", async (request, response) => {
         reportingManagerId
     } = request.body ;
 
+    const hashedPassword = await bcrypt.hash('user@123', 10) ;
+
     const createEmployeeQuery = `
         INSERT INTO EMPLOYEE(
             name, contact_number, personal_mail,official_mail, doj, position_id, department_id,address,password, reporting_manager_id
         )
         VALUES(
-            ?, ?, ?, ?, ?, ?, ?,'user@123', ?
+            ?, ?, ?, ?, ?, ?, ?,? , ?, ?
         )
     `
     
@@ -925,6 +999,7 @@ app.post("/employee/create", async (request, response) => {
             positionId,
             departmentId,
             address,
+            hashedPassword,
             reportingManagerId
         ]) ;
 
@@ -936,7 +1011,7 @@ app.post("/employee/create", async (request, response) => {
     
 })
 
-app.post("/employee/delete/:employeeId", async (request, response) => {
+app.post("/employee/delete/:employeeId",authenticateToken,isAdminstartor, async (request, response) => {
 
     const {employeeId} = request.params ;
 
@@ -957,7 +1032,7 @@ app.post("/employee/delete/:employeeId", async (request, response) => {
 })
 
 
-app.get('/positions', async (request, response) => {
+app.get('/positions',authenticateToken,isAdminstartor, async (request, response) => {
     
     const selectPositionQuery = `
         SELECT id AS positionId, position_name AS positionName
@@ -970,7 +1045,7 @@ app.get('/positions', async (request, response) => {
 })
 
 
-app.get('/departments', async (request, response) => {
+app.get('/departments',authenticateToken,isAdminstartor, async (request, response) => {
 
     const selectDepartmentsQuery = `
         SELECT id AS departmentId, name AS departmentName
