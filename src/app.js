@@ -95,6 +95,52 @@ const isAdminstartor = async (request, response, next) => {
 }
 
 
+app.put('/password/reset/',authenticateToken, async (request, response) => {
+        
+        const {payload} = request ;
+        const {employeeId} = payload;
+        
+        const {currentPassword,newPassword} = request.body;
+
+
+        const selectEmployeeQuery = `
+            SELECT *
+            FROM EMPLOYEE
+            WHERE id = ? ;
+        `
+
+        try{
+
+            const employeeObj = await db.get(selectEmployeeQuery, [employeeId]) ;
+            if(!await bcrypt.compare(currentPassword, employeeObj.password)){
+                response.status(401) ;
+                response.send({message:"Invalid Password"}) ;
+            }
+            else if(await bcrypt.compare(newPassword,employeeObj.password)){
+                response.status(400);
+                response.send({message:"Password Already In use"})
+            }else{
+                const createNewPasswordQuery = `
+                    UPDATE EMPLOYEE
+                    SET password = ?
+                    WHERE id = ? ;
+                `
+                const hashedPassword = await bcrypt.hash(newPassword, 10) ;
+
+                db.run(createNewPasswordQuery, [hashedPassword, employeeId]) ;
+
+                response.send({message:"Password Changed Successfull"}) ;
+                
+            }
+
+        }
+        catch(error){
+            console.log(error) ;
+        }        
+
+} ) ;
+
+
 app.post("/login", async (request, response) => {
     const {employeeId, password} = request.body 
 
