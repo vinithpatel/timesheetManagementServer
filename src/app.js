@@ -9,12 +9,25 @@ const sqlite3 = require("sqlite3") ;
 const {startOfWeek, endOfWeek, format, getDay, nextMonday, previousSunday, getWeek} = require("date-fns") ;
 const bcrypt = require("bcrypt") ;
 const jwt = require("jsonwebtoken") ;
+const nodemailer = require('nodemailer') ;
+// const Imap = require('imap-simple') ;
 
+const {userMail, password, host, port} = require('./env.js') ;
 
 const app = express() ;
 
 app.use(bodyParser.json()) ;
 app.use(cors()) ;
+
+
+//Nodemailer Configuration
+const transporter = nodemailer.createTransport({
+    service:"Gmail",
+    auth:{
+        user:userMail,
+        pass:password,
+    }
+});
 
 
 let db = null ;
@@ -94,6 +107,77 @@ const isAdminstartor = async (request, response, next) => {
 
 }
 
+app.post('/forgot-password/', async (request, response) => {
+        const {email} = request.body ;
+
+        const selectEmployeeQuery = `
+            SELECT EMPLOYEE.id AS employeeId, EMPLOYEE.name AS employeeName, password, official_mail AS officialMail, is_admin AS isAdmin
+            FROM EMPLOYEE
+            WHERE official_mail = ? ;
+         `
+
+         let employee ;
+         try{
+            employee = await db.get(selectEmployeeQuery,[email]) ;
+         }catch(error){
+            console.log(error) ;
+         }
+
+         if (employee === undefined){
+            response.status(404) ;
+            response.send({message:'User Not Found'}) ;
+
+            return 
+         }
+
+         const date = new Date() ;
+
+         const payload = {
+            employeeId:employee.employeeId,
+            employeeName:employee.employeeName,
+            expireDate: date.setDate(date.getDate() + 30),
+         }
+
+         const resetToken = jwt.sign(payload, "RESET_PASSWORD") ;
+
+         const resetLink = `http://localhost:8080/reset-password/${resetToken}` ;
+
+         const mailOptions = {
+            from :'vinith@theweplm.com',
+            to:email,
+            subject:'Password Reset',
+            text:`Click the following link to reset your password:`,
+            html:`<b><a href=${resetLink}>Link</a></b>`,
+         } ;
+
+         //Connect to the IMAP server and send the mail
+        //  Imap.connect(imapConfig).then(connection => {
+        //     return connection.sendMail(mailOptions, transporter) ;
+        //  }).then(info => {
+        //     console.log(`Email sent:`, info.response)
+        //     response.send({message:"Reset mail sent"}) ;
+        //  }).catch(error => {
+        //     console.log('Email sending failed', error) ;
+            
+        //     response.status(500) ;
+        //     response.send({message:"Failed to send reset email"}) ;
+        //     return 
+        //  })
+
+        transporter.sendMail(mailOptions, (error, info) => {
+            if(error){
+                console.log(error) ;
+                response.status(500) ;
+                response.send({message:"Failed to send reset mail"}) ;
+                return ;
+            }
+
+            console.log('Email sent', info.response) ;
+            response.send({message:"Reset mail sent"}) ;
+        })        
+
+})
+
 
 app.put('/password/reset/',authenticateToken, async (request, response) => {
         
@@ -108,7 +192,7 @@ app.put('/password/reset/',authenticateToken, async (request, response) => {
             FROM EMPLOYEE
             WHERE id = ? ;
         `
-
+        
         try{
 
             const employeeObj = await db.get(selectEmployeeQuery, [employeeId]) ;
