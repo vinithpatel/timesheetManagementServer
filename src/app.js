@@ -6,7 +6,7 @@ const path = require("path") ;
 const {open} = require("sqlite") ;
 const sqlite3 = require("sqlite3") ;
 
-const {startOfWeek, endOfWeek, format, getDay, nextMonday, previousSunday, getWeek} = require("date-fns") ;
+const {startOfWeek, endOfWeek, format, getDay, nextMonday, previousSunday, getWeek, isAfter} = require("date-fns") ;
 const bcrypt = require("bcrypt") ;
 const jwt = require("jsonwebtoken") ;
 const nodemailer = require('nodemailer') ;
@@ -131,11 +131,12 @@ app.post('/forgot-password/', async (request, response) => {
          }
 
          const date = new Date() ;
+         date.setDate(date.getDate() + 30)
 
          const payload = {
             employeeId:employee.employeeId,
             employeeName:employee.employeeName,
-            expireDate: date.setDate(date.getDate() + 30),
+            expireDate: date,
          }
 
          const resetToken = jwt.sign(payload, "RESET_PASSWORD") ;
@@ -176,6 +177,34 @@ app.post('/forgot-password/', async (request, response) => {
             response.send({message:"Reset mail sent"}) ;
         })        
 
+})
+
+app.get('/reset-link-verify/:resetToken', (request, response) => {
+    const {resetToken} = request.params ;
+
+    jwt.verify(resetToken, 'RESET_PASSWORD', (error, payload)=> {
+        if(error){
+            response.status(404) ;
+            response.send({message:"Invalid Reset Link"}) ;
+            return 
+        }
+
+        const {expireDate} = payload ;
+
+        const date = new Date() ;
+
+        if(isAfter(date, new Date(expireDate))){
+            response.status(400) ;
+            response.send({message:"Reset Link Expired"}) ;
+            return 
+        }
+
+        
+
+        response.send({message:"Valid Link"})
+
+
+    })
 })
 
 
