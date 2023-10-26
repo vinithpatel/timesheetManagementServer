@@ -207,6 +207,67 @@ app.get('/reset-link-verify/:resetToken', (request, response) => {
     })
 })
 
+app.put('/reset-password/', async (request, response) => {
+    const {newPassword, confirmPassword, resetToken} = request.body ;
+    
+    if(newPassword !== confirmPassword){
+        response.status(400) ;
+        response.send({message: 'Password not matched'}) ;
+        return 
+    }
+
+    jwt.verify(resetToken, 'RESET_PASSWORD', async (error, payload)=> {
+        if(error){
+            response.status(404) ;
+            response.send({message:"Invalid Reset Link"}) ;
+            return 
+        }
+
+        const {employeeId,expireDate} = payload ;
+
+        const date = new Date() ;
+
+        if(isAfter(date, new Date(expireDate))){
+            response.status(400) ;
+            response.send({message:"Reset Link Expired"}) ;
+            return 
+        }
+
+        const selectEmployeeQuery = `
+            SELECT *
+            FROM EMPLOYEE
+            WHERE id = ? ;
+        `
+        try{
+
+            const employeeObj = await db.get(selectEmployeeQuery, [employeeId]) ;
+            
+            if(await bcrypt.compare(newPassword,employeeObj.password)){
+                response.status(400);
+                response.send({message:"Password Already In use"})
+            }else{
+                const createNewPasswordQuery = `
+                    UPDATE EMPLOYEE
+                    SET password = ?
+                    WHERE id = ? ;
+                `
+                const hashedPassword = await bcrypt.hash(newPassword, 10) ;
+
+                db.run(createNewPasswordQuery, [hashedPassword, employeeId]) ;
+
+                response.send({message:"Password Changed Successfull"}) ;
+                
+            }
+
+        }
+        catch(error){
+            console.log(error) ;
+        }        
+
+        
+    })
+})
+
 
 app.put('/password/reset/',authenticateToken, async (request, response) => {
         
