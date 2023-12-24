@@ -1347,3 +1347,124 @@ app.get("/reporting_manager/employees/:reportingMangerId", async (request, respo
         console.log(error) ;
     }
 })
+
+
+//Invoice Managment
+app.get('/new-invoice-number',async (request, response) => {
+    const getInvoiceListQuery = `
+        SELECT invoice_number 
+        FROM Invoice;
+    `
+
+    try{
+       const dbList = await db.all(getInvoiceListQuery) ;
+       response.send({"newInvoiceNumber":dbList.length+1}) ;
+    }catch(error){
+        console.log(error) ;
+    }
+})
+
+app.post('/store-invoice', async (request, response) => {
+    const {branch, invoiceDate, invoiceNumber} = request.body ;
+
+    const checkInvoiceNumberExistQuery = `
+        SELECT *
+        FROM INVOICE
+        WHERE invoice_number = ?
+    `
+
+    try{
+        const data = await db.get(checkInvoiceNumberExistQuery,[invoiceNumber]) ;
+        if(data !== undefined){
+            response.status(400) ;
+            response.send({message:"invoice number already exist"});
+            return 
+        }
+    }catch(error){
+        console.log(error) ;
+    }
+
+    const storeInvoiceQuery = `
+        INSERT INTO INVOICE(
+            branch, invoice_date, invoice_number
+        )
+        VALUES(
+            ?, ?, ?
+        );
+    `
+
+    try{
+        const dbData = await db.run(storeInvoiceQuery,[branch, invoiceDate, invoiceNumber]) ;
+        response.send({id:dbData.lastID}) ;
+    }catch(error){
+        console.log(error) ;
+    }
+})
+
+
+app.get('/branches/', async (request, response) => {
+    const getAllBranchesQuery = `
+        SELECT id, branch_name AS branchName, company_name AS companyName
+        FROM BRANCH_DETAILS ;
+    `
+
+    try{
+        const data = await db.all(getAllBranchesQuery) ;
+        response.send(data) ;
+    }catch(error){
+        console.log(error) ;
+    }
+})
+
+app.get('/branch-details/:branchId', async (request, response) =>{
+    const {branchId} = request.params ;
+
+    const selectBranchQuery = `
+        SELECT id, branch_name AS branchName, company_name AS companyName,address,city,pin_code AS pinCode,email,tax_details AS taxDetails, bank_details AS bankDetails, terms_and_conditions AS termsAndConditions
+        FROM BRANCH_DETAILS
+        WHERE id = ? ;
+    `
+
+    try{
+        const branchObj = await db.get(selectBranchQuery, [branchId])
+
+        if(branchObj === undefined){
+            response.status(400) ;
+            response.send({message:"branch does not exist"}) ;
+            return 
+        }
+
+        response.send(branchObj) ;
+        
+    }catch(error){
+        console.log(error) ;
+    }
+})
+
+app.get('/currencies/', async (request, response) => {
+    const selectAllCurrencyQuery = `
+        SELECT country_name AS countryName, currency_code AS currencyCode 
+        FROM COUNTRY_CURRENCY_DATA ;
+    `
+
+    try{
+        const list = await db.all(selectAllCurrencyQuery);
+        response.send(list) ;
+    }catch(error){
+        console.log(error) ;
+    }
+})
+
+app.get('/taxes/', async (request, response) => {
+    const selectUniqueTaxesQuery = `
+        SELECT DISTINCT(tax_type) AS taxType 
+        FROM COUNTRY_TAXES ;
+    `
+
+    try{
+        const list = await db.all(selectUniqueTaxesQuery);
+        response.send(list) ;
+    }catch(error){
+        console.log(error) ;
+    }
+})
